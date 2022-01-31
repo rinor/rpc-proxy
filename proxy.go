@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi/v5"
-	"github.com/gochain/gochain/v3/common"
 	"github.com/treeder/gotils/v2"
 	"golang.org/x/time/rate"
 )

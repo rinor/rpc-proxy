@@ -6,16 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/gochain/gochain/v3/goclient"
-	"github.com/gochain/gochain/v3/rpc"
 	"github.com/treeder/gotils/v2"
 )
 
@@ -325,7 +324,7 @@ func (t *myTransport) parseRange(ctx context.Context, request ModifiedRequest) (
 
 type latestBlock struct {
 	url    string
-	client *goclient.Client
+	client *ethclient.Client
 
 	mu sync.RWMutex // Protects everything below.
 
@@ -382,13 +381,13 @@ func (l *latestBlock) update() (chan struct{}, uint64, error) {
 	var latest uint64
 	var err error
 	if l.client == nil {
-		l.client, err = goclient.Dial(l.url)
+		l.client, err = ethclient.Dial(l.url)
 	}
 	if err == nil {
-		var lBig *big.Int
-		lBig, err = l.client.LatestBlockNumber(context.Background())
+		var lBig uint64
+		lBig, err = l.client.BlockNumber(context.Background())
 		if err == nil {
-			latest = lBig.Uint64()
+			latest = lBig
 		}
 	}
 	now := time.Now()
