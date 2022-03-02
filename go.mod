@@ -3,15 +3,15 @@ module github.com/gochain-io/rpc-proxy
 go 1.17
 
 require (
-	github.com/ethereum/go-ethereum v1.10.15
+	github.com/ethereum/go-ethereum v1.10.16
 	github.com/go-chi/chi/v5 v5.0.7
-	github.com/gorilla/websocket v1.4.2
+	github.com/gorilla/websocket v1.5.0
 	github.com/pelletier/go-toml v1.9.4
 	github.com/rs/cors v1.8.2
 	github.com/treeder/gcputils v0.1.1
-	github.com/treeder/gotils/v2 v2.0.12
+	github.com/treeder/gotils/v2 v2.0.14
 	github.com/urfave/cli/v2 v2.3.0
-	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
+	golang.org/x/time v0.0.0-20220224211638-0e9765cccd65
 )
 
 require (
@@ -20,7 +20,7 @@ require (
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/btcsuite/btcd v0.20.1-beta // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d // indirect
-	github.com/deckarep/golang-set v0.0.0-20180603214616-504e848d77ea // indirect
+	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
