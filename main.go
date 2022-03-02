@@ -18,8 +18,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var requestsPerMinuteLimit int
-
 type ConfigData struct {
 	Port            string   `toml:",omitempty"`
 	URL             string   `toml:",omitempty"`
@@ -36,14 +34,17 @@ func main() {
 
 	gotils.SetLoggable(gcputils.NewLogger())
 
-	var configPath string
-	var port string
-	var redirecturl string
-	var redirectWSUrl string
-	var allowedPaths string
-	var noLimitIPs string
-	var blockRangeLimit uint64
-	var minGasPrice uint64
+	var (
+		configPath             string
+		port                   string
+		redirecturl            string
+		redirectWSUrl          string
+		allowedPaths           string
+		noLimitIPs             string
+		blockRangeLimit        uint64
+		minGasPrice            uint64
+		requestsPerMinuteLimit int
+	)
 
 	app := cli.NewApp()
 	app.Name = "rpc-proxy"
@@ -202,19 +203,7 @@ func (cfg *ConfigData) run(ctx context.Context) error {
 	r.Head("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	r.Get("/x/{method}", server.Example)
-	r.Get("/x/{method}/{arg}", server.Example)
-	r.Get("/x/{method}/{arg}/{arg2}", server.Example)
-	r.Get("/x/{method}/{arg}/{arg2}/{arg3}", server.Example)
-	r.Head("/x/net_version", func(w http.ResponseWriter, r *http.Request) {
-		_, err := server.example("net_version")
-		if err != nil {
-			gotils.L(ctx).Error().Printf("Failed to ping RPC: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
+
 	r.HandleFunc("/*", server.RPCProxy)
 	r.HandleFunc("/ws", server.WSProxy)
 	return http.ListenAndServe(":"+cfg.Port, r)

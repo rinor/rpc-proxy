@@ -2,20 +2,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sort"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/go-chi/chi/v5"
 	"github.com/treeder/gotils/v2"
 	"golang.org/x/time/rate"
 )
@@ -25,7 +20,6 @@ type Server struct {
 	proxy   *httputil.ReverseProxy
 	wsProxy *WebsocketProxy
 	myTransport
-	homepage []byte
 }
 
 func (cfg *ConfigData) NewServer() (*Server, error) {
@@ -38,6 +32,7 @@ func (cfg *ConfigData) NewServer() (*Server, error) {
 		return nil, err
 	}
 	s := &Server{target: url, proxy: httputil.NewSingleHostReverseProxy(url), wsProxy: NewProxy(wsurl)}
+	s.myTransport.requestsPerMinuteLimit = cfg.RPM
 	s.myTransport.minGasPrice = cfg.MinGasPrice
 	s.myTransport.blockRangeLimit = cfg.BlockRangeLimit
 	s.myTransport.url = cfg.URL
@@ -53,37 +48,13 @@ func (cfg *ConfigData) NewServer() (*Server, error) {
 	s.proxy.Transport = &s.myTransport
 	s.wsProxy.Transport = &s.myTransport
 
-	// Generate static home page.
-	id := json.RawMessage([]byte(`"ID"`))
-	responseRateLimit, err := json.MarshalIndent(jsonRPCLimit(id), "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	responseUnauthorized, err := json.MarshalIndent(jsonRPCUnauthorized(id, "method_name"), "", "  ")
-	if err != nil {
-		return nil, err
-	}
-
-	data := &homePageData{
-		Limit:                requestsPerMinuteLimit,
-		Methods:              cfg.Allow,
-		ResponseRateLimit:    string(responseRateLimit),
-		ResponseUnauthorized: string(responseUnauthorized),
-	}
-	sort.Strings(data.Methods)
-
-	var buf bytes.Buffer
-	if err := homePageTmpl.Execute(&buf, &data); err != nil {
-		return nil, err
-	}
-	s.homepage = buf.Bytes()
-
 	return s, nil
 }
 
 func (p *Server) HomePage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if _, err := io.Copy(w, bytes.NewReader(p.homepage)); err != nil {
+	homepage := []byte{}
+	if _, err := io.Copy(w, bytes.NewReader(homepage)); err != nil {
 		gotils.L(ctx).Error().Printf("Failed to serve homepage: %v", err)
 		return
 	}
@@ -97,110 +68,6 @@ func (p *Server) RPCProxy(w http.ResponseWriter, r *http.Request) {
 func (p *Server) WSProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-rpc-proxy", "rpc-proxy")
 	p.wsProxy.ServeHTTP(w, r)
-}
-
-func (p *Server) Example(w http.ResponseWriter, r *http.Request) {
-	method := chi.URLParam(r, "method")
-	args := []string{
-		chi.URLParam(r, "arg"),
-		chi.URLParam(r, "arg2"),
-		chi.URLParam(r, "arg3"),
-	}
-	do := func(params ...func(string) (interface{}, error)) {
-		var fmtd []interface{}
-		for i, p := range params {
-			if i > len(args) {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
-			if p == nil {
-				fmtd = append(fmtd, args[i])
-				continue
-			}
-			arg, err := p(args[i])
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			fmtd = append(fmtd, arg)
-		}
-		data, err := p.example(method, fmtd...)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Write(data)
-	}
-	switch method {
-	case "clique_getSigners":
-		do(hexNumOrLatest)
-	case "clique_getSignersAtHash":
-		do(hexHash)
-	case "clique_getSnapshot":
-		do(hexNumOrLatest)
-	case "clique_getSnapshotAtHash":
-		do(hexHash)
-	case "clique_getVoters":
-		do(hexNumOrLatest)
-	case "clique_getVotersAtHash":
-		do(hexHash)
-	case "eth_blockNumber":
-		do(hexNumOrLatest)
-	case "eth_chainId":
-		do()
-	case "eth_gasPrice":
-		do()
-	case "eth_genesisAlloc":
-		do()
-	case "eth_getBalance":
-		do(hexAddr, hexNumOrLatest)
-	case "eth_getBlockByHash":
-		do(hexHash, boolOrFalse)
-	case "eth_getBlockByNumber":
-		do(hexNumOrLatest, boolOrFalse)
-	case "eth_getBlockTransactionCountByHash":
-		do(hexHash)
-	case "eth_getBlockTransactionCountByNumber":
-		do(hexNumOrLatest)
-	case "eth_getCode":
-		do(hexAddr, hexNumOrLatest)
-	case "eth_getFilterChanges":
-		do(nil)
-	case "eth_getLogs":
-		do(func(arg string) (interface{}, error) {
-			if hasHexPrefix(arg) {
-				arg = arg[2:]
-			}
-			if !isHex(arg) {
-				return nil, fmt.Errorf("non-hex argument: %s", arg)
-			}
-			return map[string]interface{}{"blockhash": "0x" + arg}, nil
-		})
-	case "eth_getStorageAt":
-		do(hexAddr, hexNumOrZero, hexNumOrLatest)
-	case "eth_getTransactionByBlockHashAndIndex":
-		do(nil, hexNumOrZero)
-	case "eth_getTransactionByBlockNumberAndIndex":
-		do(hexNumOrLatest, hexNumOrZero)
-	case "eth_getTransactionCount":
-		do(hexAddr, hexNumOrLatest)
-	case "eth_getTransactionByHash", "eth_getTransactionReceipt":
-		do(hexHash)
-	case "eth_totalSupply":
-		do(hexNumOrLatest)
-	case "net_listening":
-		do()
-	case "net_version":
-		do()
-	case "rpc_modules":
-		do()
-	case "web3_clientVersion":
-		do()
-
-	default:
-		http.NotFound(w, r)
-	}
 }
 
 func hexAddr(arg string) (interface{}, error) {
@@ -283,140 +150,3 @@ func isHex(str string) bool {
 	}
 	return true
 }
-
-func (p *Server) example(method string, params ...interface{}) ([]byte, error) {
-	body, err := json.Marshal(struct {
-		JSONRPC string        `json:"jsonrpc"`
-		ID      string        `json:"id"`
-		Method  string        `json:"method"`
-		Params  []interface{} `json:"params"`
-	}{
-		JSONRPC: "2.0",
-		ID:      "1",
-		Method:  method,
-		Params:  params,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, p.target.String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	const contentType = "application/json"
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Accept", contentType)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var formattedResp string
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		formattedResp = fmt.Sprintf("Code: %d (%s)\nBody: %s\n", resp.StatusCode, resp.Status, string(respBody))
-	} else {
-		formattedResp = indent(respBody)
-	}
-
-	var buf bytes.Buffer
-	if err := exampleTmpl.Execute(&buf, &exampleData{Method: method, Request: indent(body), Response: formattedResp}); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func indent(b []byte) string {
-	var buf bytes.Buffer
-	_ = json.Indent(&buf, b, "", "  ")
-	return buf.String()
-}
-
-type homePageData struct {
-	Limit                int
-	Methods              []string
-	ResponseRateLimit    string
-	ResponseUnauthorized string
-}
-
-var homePageTmpl = template.Must(template.New("").Parse(`<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<title>GoChain RPC Proxy</title>
-		<style>
-			body {
-				font-family: 'Lato', sans-serif;
-			}
-			.json {
-				padding: 1rem;
-				padding-left: 2rem;
-				background-color:#eee;
-				width:max-content;
-			}
-		</style>
-		<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,300,600,700&amp;subset=all" rel="stylesheet" type="text/css">
-	</head>
-	<body>
-		<h1>GoChain RPC Proxy</h1>
-
-		<p>This is an RPC endpoint for <a href="https://gochain.io" rel="nofollow">GoChain</a>. It provides access to a limited subset of services. Rate limits apply.</p>
-
-		<h2>Rate Limit</h2>
-
-		<p>The rate limit is <code>{{.Limit}}</code> requests per minute. If you exceed this limit, you will receive a 429 response:</p>
-
-		<pre class="json">{{.ResponseRateLimit}}</pre>
-
-		<h2>Allowed Methods</h2>
-
-		<p>Only the following listed methods are allowed. Click for an example. If you attempt to call any other methods, you will receive a 401 response:</p>
-
-		<pre class="json">{{.ResponseUnauthorized}}</pre>
-
-		<ul>
-			{{range .Methods}}<li><a href="x/{{.}}">{{.}}</a></li>{{end}}
-		</ul>
-	<body>
-</html>
-`))
-
-type exampleData struct {
-	Method, Request, Response string
-}
-
-var exampleTmpl = template.Must(template.New("").Parse(`<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<title>GoChain RPC Proxy</title>
-		<style>
-			body {
-				font-family: 'Lato', sans-serif;
-			}
-			.json {
-				padding: 1rem;
-				padding-left: 2rem;
-				background-color:#eee;
-				width:max-content;
-			}
-		</style>
-		<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,300,600,700&amp;subset=all" rel="stylesheet" type="text/css">
-	</head>
-	<body>
-		<h1>GoChain RPC Proxy</h1>
-
-		<p>This is an example call for <code>{{.Method}}</code>.</p>
-
-		<h2>Request</h2>
-
-		<pre class="json">{{.Request}}</pre>
-
-		<h2>Response</h2>
-
-		<pre class="json">{{.Response}}</pre>
-	<body>
-</html>
-`))

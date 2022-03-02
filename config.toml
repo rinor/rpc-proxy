@@ -1,11 +1,5 @@
 # This is an example configuration file.
 Allow = [
-  "clique_getSigners",
-  "clique_getSignersAtHash",
-  "clique_getSnapshot",
-  "clique_getSnapshotAtHash",
-  "clique_getVoters",
-  "clique_getVotersAtHash",
   "eth_blockNumber",
   "eth_call",
   "eth_chainId",

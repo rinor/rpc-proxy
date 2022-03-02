@@ -22,8 +22,9 @@ import (
 )
 
 type myTransport struct {
-	minGasPrice     uint64
-	blockRangeLimit uint64 // 0 means none
+	minGasPrice            uint64
+	requestsPerMinuteLimit int
+	blockRangeLimit        uint64 // 0 means none
 
 	matcher
 	limiters
@@ -242,7 +243,7 @@ func (t *myTransport) block(ctx context.Context, parsedRequests []ModifiedReques
 	var union *blockRange
 	for _, parsedRequest := range parsedRequests {
 		ctx = gotils.With(ctx, "ip", parsedRequest.RemoteAddr)
-		if allowed, added := t.AllowVisitor(parsedRequest); !allowed {
+		if allowed, added := t.AllowVisitor(parsedRequest.RemoteAddr, t.requestsPerMinuteLimit); !allowed {
 			gotils.L(ctx).Info().Print("Request blocked: Rate limited")
 			return http.StatusTooManyRequests, jsonRPCLimit(parsedRequest.ID)
 		} else if added {

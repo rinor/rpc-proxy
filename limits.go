@@ -13,7 +13,7 @@ type limiters struct {
 	sync.RWMutex
 }
 
-func (ls *limiters) tryAddVisitor(ip string) (*rate.Limiter, bool) {
+func (ls *limiters) tryAddVisitor(ip string, requestsPerMinuteLimit int) (*rate.Limiter, bool) {
 	ls.Lock()
 	defer ls.Unlock()
 	limiter, exists := ls.visitors[ip]
@@ -26,20 +26,20 @@ func (ls *limiters) tryAddVisitor(ip string) (*rate.Limiter, bool) {
 	return limiter, true
 }
 
-func (ls *limiters) getVisitor(ip string) (*rate.Limiter, bool) {
+func (ls *limiters) getVisitor(ip string, requestsPerMinuteLimit int) (*rate.Limiter, bool) {
 	ls.RLock()
 	limiter, exists := ls.visitors[ip]
 	ls.RUnlock()
 	if !exists {
-		return ls.tryAddVisitor(ip)
+		return ls.tryAddVisitor(ip, requestsPerMinuteLimit)
 	}
 	return limiter, false
 }
 
-func (ls *limiters) AllowVisitor(r ModifiedRequest) (allowed, added bool) {
-	if _, ok := ls.noLimitIPs[r.RemoteAddr]; ok {
+func (ls *limiters) AllowVisitor(ip string, requestsPerMinuteLimit int) (allowed, added bool) {
+	if _, ok := ls.noLimitIPs[ip]; ok {
 		return true, false
 	}
-	limiter, added := ls.getVisitor(r.RemoteAddr)
+	limiter, added := ls.getVisitor(ip, requestsPerMinuteLimit)
 	return limiter.Allow(), added
 }
