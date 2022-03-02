@@ -28,6 +28,7 @@ type ConfigData struct {
 	RPM             int      `toml:",omitempty"`
 	NoLimit         []string `toml:",omitempty"`
 	BlockRangeLimit uint64   `toml:",omitempty"`
+	MinGasPrice     uint64   `toml:",omitempty"`
 }
 
 func main() {
@@ -42,6 +43,7 @@ func main() {
 	var allowedPaths string
 	var noLimitIPs string
 	var blockRangeLimit uint64
+	var minGasPrice uint64
 
 	app := cli.NewApp()
 	app.Name = "rpc-proxy"
@@ -92,6 +94,12 @@ func main() {
 			Name:        "blocklimit, b",
 			Usage:       "block range query limit",
 			Destination: &blockRangeLimit,
+		},
+		&cli.Uint64Flag{
+			Name:        "mingasprice, m",
+			Value:       60000000000,
+			Usage:       "min gas price in WEI the transaction should have",
+			Destination: &minGasPrice,
 		},
 	}
 
@@ -149,7 +157,12 @@ func main() {
 			}
 			cfg.BlockRangeLimit = blockRangeLimit
 		}
-
+		if minGasPrice > 0 {
+			if cfg.MinGasPrice > 0 {
+				return errors.New("min gas price set in two places")
+			}
+			cfg.MinGasPrice = minGasPrice
+		}
 		return cfg.run(ctx)
 	}
 
@@ -165,7 +178,7 @@ func (cfg *ConfigData) run(ctx context.Context) error {
 	sort.Strings(cfg.NoLimit)
 
 	gotils.L(ctx).Info().Println("Server starting, port:", cfg.Port, "redirectURL:", cfg.URL, "redirectWSURL:", cfg.WSURL,
-		"rpmLimit:", cfg.RPM, "exempt:", cfg.NoLimit, "allowed:", cfg.Allow)
+		"rpmLimit:", cfg.RPM, "exempt:", cfg.NoLimit, "allowed:", cfg.Allow, "minGasPrice:", cfg.MinGasPrice)
 
 	// Create proxy server.
 	server, err := cfg.NewServer()

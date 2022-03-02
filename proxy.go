@@ -38,6 +38,7 @@ func (cfg *ConfigData) NewServer() (*Server, error) {
 		return nil, err
 	}
 	s := &Server{target: url, proxy: httputil.NewSingleHostReverseProxy(url), wsProxy: NewProxy(wsurl)}
+	s.myTransport.minGasPrice = cfg.MinGasPrice
 	s.myTransport.blockRangeLimit = cfg.BlockRangeLimit
 	s.myTransport.url = cfg.URL
 	s.matcher, err = newMatcher(cfg.Allow)

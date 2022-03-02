@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,13 +13,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/treeder/gotils/v2"
 )
 
 type myTransport struct {
+	minGasPrice     uint64
 	blockRangeLimit uint64 // 0 means none
 
 	matcher
@@ -162,6 +166,10 @@ func jsonRPCBlockRangeLimit(id json.RawMessage, blocks, limit uint64) interface{
 	return jsonRPCError(id, jsonRPCInvalidParams, fmt.Sprintf("Requested range of blocks (%d) is larger than limit (%d).", blocks, limit))
 }
 
+func jsonRPCMinGasPriceRequired(id json.RawMessage, providedGasPrice, minGasPrice uint64) interface{} {
+	return jsonRPCError(id, jsonRPCInvalidParams, fmt.Sprintf("Provided gas price (%d wei) is lower than min required (%d wei).", providedGasPrice, minGasPrice))
+}
+
 // jsonRPCResponse returns a JSON response containing v, or a plaintext generic
 // response for this httpCode and an error when JSON marshalling fails.
 func jsonRPCResponse(httpCode int, v interface{}) (*http.Response, error) {
@@ -210,6 +218,25 @@ func (t *myTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
+// parseGasPrice returns gas price set from a raw transaction
+func (t *myTransport) parseGasPrice(param json.RawMessage) (uint64, error) {
+	var tx *types.Transaction
+
+	rawTxStr := strings.Trim(string(param), "\"")
+	if hasHexPrefix(rawTxStr) {
+		rawTxStr = rawTxStr[2:]
+	}
+	rawTxBytes, err := hex.DecodeString(rawTxStr)
+	if err != nil {
+		return 0, err
+	}
+	err = rlp.DecodeBytes(rawTxBytes, &tx)
+	if err != nil {
+		return 0, err
+	}
+	return tx.GasPrice().Uint64(), nil // FIX: undefined
+}
+
 // block returns a response only if the request should be blocked, otherwise it returns nil if allowed.
 func (t *myTransport) block(ctx context.Context, parsedRequests []ModifiedRequest) (int, interface{}) {
 	var union *blockRange
@@ -248,6 +275,17 @@ func (t *myTransport) block(ctx context.Context, parsedRequests []ModifiedReques
 						return http.StatusBadRequest, jsonRPCBlockRangeLimit(parsedRequest.ID, l, t.blockRangeLimit)
 					}
 				}
+			}
+		}
+
+		if t.minGasPrice > 0 && parsedRequest.Path == "eth_sendRawTransaction" {
+			providedGasPrice, err := t.parseGasPrice(parsedRequest.Params[0])
+			if err != nil {
+				return http.StatusBadRequest, jsonRPCError(parsedRequest.ID, jsonRPCInvalidParams, err.Error())
+			}
+			if providedGasPrice < t.minGasPrice {
+				gotils.L(ctx).Info().Print("Request blocked: provided gasPrice low:", providedGasPrice, "wei", "expected at least:", t.minGasPrice, "wei")
+				return http.StatusBadRequest, jsonRPCMinGasPriceRequired(parsedRequest.ID, providedGasPrice, t.minGasPrice)
 			}
 		}
 	}
